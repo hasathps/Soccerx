@@ -67,7 +67,57 @@ function LiveDot() {
   );
 }
 
-// Countdown Timer Component
+// Get current IST (Indian Standard Time) - UTC+5:30
+function getISTNow() {
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const ist = new Date(utc + (5.5 * 3600000)); // IST is UTC+5:30
+  return ist;
+}
+
+// Convert time to IST (assumes API times are in UTC)
+function convertToIST(dateEvent, strTime) {
+  if (!dateEvent || !strTime) return null;
+  
+  try {
+    // Check if time string is valid
+    const timeParts = strTime.split(':');
+    if (timeParts.length < 2) return null;
+    
+    const hours = parseInt(timeParts[0], 10);
+    const minutes = parseInt(timeParts[1] || '0', 10);
+    
+    if (isNaN(hours) || isNaN(minutes)) return null;
+    
+    // Parse date
+    const dateParts = dateEvent.split('-');
+    if (dateParts.length !== 3) return null;
+    
+    const year = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed
+    const day = parseInt(dateParts[2], 10);
+    
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+    
+    // Create UTC date-time
+    const utcDate = new Date(Date.UTC(year, month, day, hours, minutes, 0));
+    
+    // Validate UTC date
+    if (isNaN(utcDate.getTime())) return null;
+    
+    // Convert UTC to IST (UTC+5:30 = 5.5 hours)
+    const istDate = new Date(utcDate.getTime() + (5.5 * 3600000));
+    
+    // Validate IST date
+    if (isNaN(istDate.getTime())) return null;
+    
+    return istDate;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Countdown Timer Component (using IST)
 function CountdownTimer({ dateEvent, strTime, isDarkMode }) {
   const [timeRemaining, setTimeRemaining] = useState(null);
 
@@ -76,9 +126,12 @@ function CountdownTimer({ dateEvent, strTime, isDarkMode }) {
       if (!dateEvent || !strTime) return null;
 
       try {
-        const matchDateTime = new Date(`${dateEvent}T${strTime}`);
-        const now = new Date();
-        const diff = matchDateTime - now;
+        // Convert match time to IST
+        const matchIST = convertToIST(dateEvent, strTime);
+        if (!matchIST) return null;
+        
+        const istNow = getISTNow();
+        const diff = matchIST - istNow;
 
         if (diff <= 0) return null;
 
@@ -116,7 +169,7 @@ function CountdownTimer({ dateEvent, strTime, isDarkMode }) {
 
   return (
     <Text style={[sharedStyles.countdownText, { color: isDarkMode ? '#87CEEB' : '#1F509A' }]}>
-      Starts in: {timeRemaining}
+      Starts in: {timeRemaining} (IST)
     </Text>
   );
 }
@@ -174,6 +227,83 @@ function AnimatedScore({ score, isDarkMode }) {
       {score !== null && score !== undefined ? score : '-'}
     </Animated.Text>
   );
+}
+
+// Format Date and Time for Display (using IST)
+function formatDateTime(dateEvent, strTime) {
+  if (!dateEvent) return 'TBD';
+  
+  try {
+    // Convert match time to IST
+    const matchIST = convertToIST(dateEvent, strTime);
+    
+    if (!matchIST || isNaN(matchIST.getTime())) {
+      // Fallback: display original time with IST label
+      if (strTime) {
+        try {
+          const [hours, minutes] = strTime.split(':');
+          const hour = parseInt(hours, 10);
+          const min = minutes || '00';
+          if (!isNaN(hour)) {
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const displayHour = hour % 12 || 12;
+            return `${dateEvent} • ${displayHour}:${min} ${ampm} IST`;
+          }
+        } catch (e) {
+          return `${dateEvent} • ${strTime} IST`;
+        }
+      }
+      return dateEvent + (strTime ? ` • ${strTime} IST` : '');
+    }
+    
+    const istNow = getISTNow();
+    const todayIST = new Date(istNow);
+    todayIST.setHours(0, 0, 0, 0);
+    
+    const matchDateIST = new Date(matchIST);
+    matchDateIST.setHours(0, 0, 0, 0);
+    
+    const diffTime = matchDateIST - todayIST;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    let dateStr = '';
+    if (diffDays === 0) {
+      dateStr = 'Today';
+    } else if (diffDays === 1) {
+      dateStr = 'Tomorrow';
+    } else if (diffDays === -1) {
+      dateStr = 'Yesterday';
+    } else {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = matchIST.getMonth();
+      const day = matchIST.getDate();
+      const year = matchIST.getFullYear();
+      if (!isNaN(month) && !isNaN(day) && !isNaN(year)) {
+        dateStr = `${months[month]} ${day}, ${year}`;
+      } else {
+        dateStr = dateEvent;
+      }
+    }
+    
+    // Format time in IST
+    const hours = matchIST.getHours();
+    const minutes = matchIST.getMinutes();
+    
+    if (isNaN(hours) || isNaN(minutes)) {
+      // Fallback to original time
+      return dateStr + (strTime ? ` • ${strTime} IST` : '');
+    }
+    
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHour = hours % 12 || 12;
+    const displayMin = String(minutes).padStart(2, '0');
+    const timeStr = ` • ${displayHour}:${displayMin} ${ampm} IST`;
+    
+    return dateStr + timeStr;
+  } catch (error) {
+    // Final fallback
+    return dateEvent + (strTime ? ` • ${strTime} IST` : '');
+  }
 }
 
 // Animated Status Badge Component
@@ -352,7 +482,7 @@ export default function MatchCard({
             />
           ) : (
             <Text style={styles.dateTimeText}>
-              {match.dateEvent || 'TBD'} {match.strTime ? `• ${match.strTime}` : ''}
+              {formatDateTime(match.dateEvent, match.strTime)}
             </Text>
           )}
           {isLive && match.strProgress && (
