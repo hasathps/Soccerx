@@ -53,6 +53,16 @@ export default function FootballScreen({ navigation }) {
           console.log('[FOOTBALL SCREEN] Fetching events for league:', league.idLeague, '-', league.strLeague);
           const events = await sportsAPI.getUpcomingEvents(league.idLeague);
           console.log('[FOOTBALL SCREEN] Events received for league', league.idLeague, ':', events?.length || 0, 'events');
+          console.log('[FOOTBALL SCREEN] ✅ DATA SOURCE: REAL API (TheSportsDB)');
+          
+          // Log first event to see what fields API returns
+          if (events && events.length > 0) {
+            console.log('[FOOTBALL SCREEN] Sample event fields:', Object.keys(events[0]));
+            console.log('[FOOTBALL SCREEN] Sample event dateEvent:', events[0].dateEvent);
+            console.log('[FOOTBALL SCREEN] Sample event strTime:', events[0].strTime);
+            console.log('[FOOTBALL SCREEN] Sample event dateEventLocal:', events[0].dateEventLocal);
+            console.log('[FOOTBALL SCREEN] Sample event strTimestamp:', events[0].strTimestamp);
+          }
           
           // Add league info to each match and fetch team logos
           const eventsWithLeague = await Promise.all(
@@ -62,6 +72,17 @@ export default function FootballScreen({ navigation }) {
                 strSport: 'Soccer',
                 strLeagueFull: league.strLeague,
               };
+              
+              // Ensure date and time are preserved
+              if (event.dateEvent) {
+                matchWithLeague.dateEvent = event.dateEvent;
+              }
+              if (event.strTime) {
+                matchWithLeague.strTime = event.strTime;
+              }
+              if (event.dateEventLocal) {
+                matchWithLeague.dateEventLocal = event.dateEventLocal;
+              }
 
               // Fetch team logos if team IDs are available
               if (event.idHomeTeam && !matchWithLeague.strHomeTeamBadge) {
@@ -115,11 +136,29 @@ export default function FootballScreen({ navigation }) {
       console.log('[FOOTBALL SCREEN] After deduplication:', uniqueMatches.length, 'unique matches');
       allMatches = uniqueMatches;
 
+      // Log date/time info for first few matches
+      if (allMatches.length > 0) {
+        console.log('[FOOTBALL SCREEN] Checking date/time in matches...');
+        allMatches.slice(0, 3).forEach((match, index) => {
+          console.log(`[FOOTBALL SCREEN] Match ${index + 1}:`, {
+            idEvent: match.idEvent,
+            strHomeTeam: match.strHomeTeam,
+            strAwayTeam: match.strAwayTeam,
+            dateEvent: match.dateEvent,
+            strTime: match.strTime,
+            dateEventLocal: match.dateEventLocal,
+            strTimestamp: match.strTimestamp,
+          });
+        });
+      }
+
       // If no matches found, use sample data
       if (allMatches.length === 0) {
-        console.warn('[FOOTBALL SCREEN] No matches found from API, using sample data');
+        console.warn('[FOOTBALL SCREEN] ⚠️ No matches found from API, using MOCK/SAMPLE data');
         allMatches = getSampleMatches();
         console.log('[FOOTBALL SCREEN] Sample matches created:', allMatches.length, 'matches');
+      } else {
+        console.log('[FOOTBALL SCREEN] ✅ Using REAL API data (not mock data)');
       }
 
       setMatches(allMatches);
@@ -142,20 +181,20 @@ export default function FootballScreen({ navigation }) {
   };
 
   const getSampleMatches = () => {
-    // Get current date and time for mock data
     const now = new Date();
     const today = now.toISOString().split('T')[0];
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const futureDate = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const futureDate2 = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
-    // Future time (2 hours from now)
     const futureTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
     const futureTimeStr = `${String(futureTime.getHours()).padStart(2, '0')}:${String(futureTime.getMinutes()).padStart(2, '0')}`;
     
-    // Future time (1 day from now)
     const futureTime2 = new Date(now.getTime() + 26 * 60 * 60 * 1000);
     const futureTimeStr2 = `${String(futureTime2.getHours()).padStart(2, '0')}:${String(futureTime2.getMinutes()).padStart(2, '0')}`;
+    
+    const pastTime = '15:30';
+    const pastTime2 = '18:00';
 
     return [
       // LIVE MATCH - Shows pulsing dot, animated scores
@@ -179,15 +218,15 @@ export default function FootballScreen({ navigation }) {
         strHomeTeamBadge: 'https://www.thesportsdb.com/images/media/team/badge/manchester-united.png',
         strAwayTeamBadge: 'https://www.thesportsdb.com/images/media/team/badge/liverpool.png',
       },
-      // FINISHED MATCH - Shows FT badge, final scores
+      // FINISHED MATCH - Shows FT badge, final scores (yesterday's match)
       {
         idEvent: '2',
         strEvent: 'Barcelona vs Real Madrid',
         strLeague: 'La Liga',
         strSport: 'Soccer',
         strLeagueFull: 'La Liga',
-        dateEvent: today,
-        strTime: '12:00',
+        dateEvent: yesterday,
+        strTime: pastTime,
         strHomeTeam: 'Barcelona',
         strAwayTeam: 'Real Madrid',
         strStatus: 'Finished',
@@ -268,15 +307,15 @@ export default function FootballScreen({ navigation }) {
         strHomeTeamBadge: 'https://www.thesportsdb.com/images/media/team/badge/ac-milan.png',
         strAwayTeamBadge: 'https://www.thesportsdb.com/images/media/team/badge/inter-milan.png',
       },
-      // FINISHED MATCH - High scoring
+      // FINISHED MATCH - High scoring (yesterday)
       {
         idEvent: '7',
         strEvent: 'Manchester City vs Tottenham',
         strLeague: 'Premier League',
         strSport: 'Soccer',
         strLeagueFull: 'Premier League',
-        dateEvent: today,
-        strTime: '10:00',
+        dateEvent: yesterday,
+        strTime: pastTime2,
         strHomeTeam: 'Manchester City',
         strAwayTeam: 'Tottenham',
         strStatus: 'FT',

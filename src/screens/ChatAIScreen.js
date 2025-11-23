@@ -83,10 +83,20 @@ export default function ChatAIScreen() {
         };
         setMessages((prev) => [...prev, assistantMessage]);
       } else {
+        let errorContent = `Sorry, I encountered an error: ${response.error}`;
+        
+        if (response.error && response.error.toLowerCase().includes('leaked')) {
+          errorContent = `⚠️ Your API key has been reported as leaked. Please generate a new API key at https://makersuite.google.com/app/apikey and update it in src/config/gemini.config.js`;
+        } else if (response.error && response.error.toLowerCase().includes('invalid')) {
+          errorContent = `⚠️ Your API key is invalid. Please check your API key in src/config/gemini.config.js`;
+        } else if (response.error && response.error.toLowerCase().includes('quota')) {
+          errorContent = `⚠️ API quota exceeded. Please wait a few minutes and try again.`;
+        }
+        
         const errorMessage = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `Sorry, I encountered an error: ${response.error}. Please try again.`,
+          content: errorContent,
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, errorMessage]);

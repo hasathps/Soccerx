@@ -13,8 +13,38 @@ import { useDispatch, useSelector } from 'react-redux';
 import { addFavorite, removeFavorite } from '../store/slices/favoritesSlice';
 import { sportsAPI } from '../services/api';
 
+function formatDate(dateString) {
+  if (!dateString) return 'To be determined';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      return dateString;
+    }
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  } catch (error) {
+    return dateString;
+  }
+}
+
+function formatTime(timeString) {
+  if (!timeString) return 'TBD';
+  try {
+    const [hours, minutes] = timeString.split(':');
+    const hour = parseInt(hours);
+    if (isNaN(hour)) {
+      return timeString;
+    }
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minutes || '00'} ${ampm}`;
+  } catch (error) {
+    return timeString;
+  }
+}
+
 export default function DetailsScreen({ route, navigation }) {
-  console.log('[DETAILS SCREEN] Component rendering...');
   const { match } = route.params;
   const dispatch = useDispatch();
   const favorites = useSelector((state) => state.favorites.favorites);
@@ -23,28 +53,17 @@ export default function DetailsScreen({ route, navigation }) {
   const [homeTeamPlayers, setHomeTeamPlayers] = useState([]);
   const [awayTeamPlayers, setAwayTeamPlayers] = useState([]);
   const [loadingSquads, setLoadingSquads] = useState(false);
-
-  console.log('[DETAILS SCREEN] Match data:', {
-    idEvent: match.idEvent,
-    id: match.id,
-    event: match.strEvent,
-    homeTeam: match.strHomeTeam,
-    awayTeam: match.strAwayTeam,
-  });
-  console.log('[DETAILS SCREEN] Favorites count:', favorites?.length || 0);
+  const [eventDetails, setEventDetails] = useState(null);
 
   const matchId = match.idEvent || match.id;
   const isFavorite = favorites.some((fav) => (fav.idEvent || fav.id) === matchId);
-  
-  console.log('[DETAILS SCREEN] Is favorite:', isFavorite);
-  console.log('[DETAILS SCREEN] Dark mode:', isDarkMode);
 
   useEffect(() => {
     loadTeamSquads();
+    loadEventDetails();
   }, [match]);
 
   const loadTeamSquads = async () => {
-    console.log('[DETAILS SCREEN] Loading team squads...');
     setLoadingSquads(true);
 
     try {
@@ -53,10 +72,6 @@ export default function DetailsScreen({ route, navigation }) {
       const homeTeamId = match.idHomeTeam || match.idHomeTeam;
       const awayTeamId = match.idAwayTeam || match.idAwayTeam;
 
-      console.log('[DETAILS SCREEN] Home team:', homeTeamName, 'ID:', homeTeamId);
-      console.log('[DETAILS SCREEN] Away team:', awayTeamName, 'ID:', awayTeamId);
-
-      // Fetch squads for both teams
       const [homeSquad, awaySquad] = await Promise.all([
         fetchTeamSquad(homeTeamId, homeTeamName),
         fetchTeamSquad(awayTeamId, awayTeamName),
@@ -64,12 +79,7 @@ export default function DetailsScreen({ route, navigation }) {
 
       setHomeTeamPlayers(homeSquad || []);
       setAwayTeamPlayers(awaySquad || []);
-
-      console.log('[DETAILS SCREEN] Home squad loaded:', homeSquad?.length || 0, 'players');
-      console.log('[DETAILS SCREEN] Away squad loaded:', awaySquad?.length || 0, 'players');
     } catch (error) {
-      console.error('[DETAILS SCREEN ERROR] Error loading squads:');
-      console.error('[DETAILS SCREEN ERROR] Error message:', error.message);
       setHomeTeamPlayers([]);
       setAwayTeamPlayers([]);
     } finally {
@@ -79,22 +89,16 @@ export default function DetailsScreen({ route, navigation }) {
 
   const fetchTeamSquad = async (teamId, teamName) => {
     try {
-      // If we have a team ID, use it directly
       if (teamId) {
-        console.log('[DETAILS SCREEN] Fetching squad for team ID:', teamId);
         const players = await sportsAPI.getPlayersByTeam(teamId);
         return players || [];
       }
 
-      // Otherwise, search for team by name
       if (teamName) {
-        console.log('[DETAILS SCREEN] Searching for team:', teamName);
         const teams = await sportsAPI.searchTeams(teamName);
         
         if (teams && teams.length > 0) {
-          // Use the first matching team
           const team = teams[0];
-          console.log('[DETAILS SCREEN] Found team:', team.strTeam, 'ID:', team.idTeam);
           const players = await sportsAPI.getPlayersByTeam(team.idTeam);
           return players || [];
         }
@@ -102,35 +106,50 @@ export default function DetailsScreen({ route, navigation }) {
 
       return [];
     } catch (error) {
-      console.error('[DETAILS SCREEN ERROR] Error fetching team squad:');
-      console.error('[DETAILS SCREEN ERROR] Team:', teamName);
-      console.error('[DETAILS SCREEN ERROR] Error message:', error.message);
       return [];
+    }
+  };
+
+  const loadEventDetails = async () => {
+    try {
+      const matchId = match.idEvent || match.id;
+      if (matchId) {
+        const details = await sportsAPI.getEventDetails(matchId);
+        if (details) {
+          console.log('[DETAILS SCREEN] ✅ Event details fetched from API');
+          console.log('[DETAILS SCREEN] API Response:', {
+            dateEvent: details.dateEvent,
+            strTime: details.strTime,
+            dateEventLocal: details.dateEventLocal,
+            strTimestamp: details.strTimestamp,
+            strStatus: details.strStatus,
+            strEvent: details.strEvent,
+            strLeague: details.strLeague,
+            strHomeTeam: details.strHomeTeam,
+            strAwayTeam: details.strAwayTeam,
+          });
+          setEventDetails(details);
+        } else {
+          console.log('[DETAILS SCREEN] ⚠️ No event details from API, using match data');
+        }
+      } else {
+        console.log('[DETAILS SCREEN] ⚠️ No match ID, using match data');
+      }
+    } catch (error) {
+      console.log('[DETAILS SCREEN] ❌ Error loading event details:', error.message);
     }
   };
 
   const toggleFavorite = () => {
     const matchId = match.idEvent || match.id;
-    console.log('[DETAILS SCREEN] Toggle favorite called');
-    console.log('[DETAILS SCREEN] Match ID:', matchId);
-    console.log('[DETAILS SCREEN] Current favorite status:', isFavorite);
-    
     try {
       if (isFavorite) {
-        console.log('[DETAILS SCREEN] Removing from favorites...');
         dispatch(removeFavorite(matchId));
-        console.log('[DETAILS SCREEN] Favorite removed successfully');
       } else {
-        console.log('[DETAILS SCREEN] Adding to favorites...');
         dispatch(addFavorite(match));
-        console.log('[DETAILS SCREEN] Favorite added successfully');
       }
     } catch (error) {
-      console.error('[DETAILS SCREEN ERROR] Error toggling favorite:');
-      console.error('[DETAILS SCREEN ERROR] Error type:', error.constructor.name);
-      console.error('[DETAILS SCREEN ERROR] Error message:', error.message);
-      console.error('[DETAILS SCREEN ERROR] Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-      console.error('[DETAILS SCREEN ERROR] Stack trace:', error.stack);
+      // Error handling
     }
   };
 
@@ -196,16 +215,28 @@ export default function DetailsScreen({ route, navigation }) {
             <View style={styles.detailContent}>
               <Text style={styles.detailLabel}>Date</Text>
               <Text style={styles.detailValue}>
-                {match.dateEvent || 'To be determined'}
+                {eventDetails?.dateEvent 
+                  ? formatDate(eventDetails.dateEvent)
+                  : (match.dateEvent ? formatDate(match.dateEvent) : 'To be determined')}
               </Text>
+              {eventDetails?.dateEvent && (
+                <Text style={styles.dataSourceText}>✓ From API</Text>
+              )}
             </View>
           </View>
 
-          {match.strTime && (
+          {(eventDetails?.strTime || match.strTime) && (
             <View style={styles.detailRow}>
               <View style={styles.detailContent}>
                 <Text style={styles.detailLabel}>Time</Text>
-                <Text style={styles.detailValue}>{match.strTime}</Text>
+                <Text style={styles.detailValue}>
+                  {eventDetails?.strTime 
+                    ? formatTime(eventDetails.strTime)
+                    : formatTime(match.strTime)}
+                </Text>
+                {eventDetails?.strTime && (
+                  <Text style={styles.dataSourceText}>✓ From API</Text>
+                )}
               </View>
             </View>
           )}
@@ -214,16 +245,35 @@ export default function DetailsScreen({ route, navigation }) {
             <View style={styles.detailContent}>
               <Text style={styles.detailLabel}>Status</Text>
               <Text style={styles.detailValue}>
-                {match.strStatus || 'Not Started'}
+                {eventDetails?.strStatus || match.strStatus || 'Not Started'}
               </Text>
+              {eventDetails?.strStatus && (
+                <Text style={styles.dataSourceText}>✓ From API</Text>
+              )}
             </View>
           </View>
 
-          {match.strEvent && (
+          {(eventDetails?.strEvent || match.strEvent) && (
             <View style={styles.detailRow}>
               <View style={styles.detailContent}>
                 <Text style={styles.detailLabel}>Event</Text>
-                <Text style={styles.detailValue}>{match.strEvent}</Text>
+                <Text style={styles.detailValue}>
+                  {eventDetails?.strEvent || match.strEvent}
+                </Text>
+                {eventDetails?.strEvent && (
+                  <Text style={styles.dataSourceText}>✓ From API</Text>
+                )}
+              </View>
+            </View>
+          )}
+
+          {eventDetails && (
+            <View style={styles.detailRow}>
+              <View style={styles.detailContent}>
+                <Text style={styles.detailLabel}>Data Source</Text>
+                <Text style={[styles.detailValue, { color: isDarkMode ? '#87CEEB' : '#1F509A' }]}>
+                  ✓ Retrieved from TheSportsDB API
+                </Text>
               </View>
             </View>
           )}
@@ -474,6 +524,12 @@ const getStyles = (isDarkMode) =>
       fontSize: 16,
       color: isDarkMode ? '#fff' : '#333',
       fontWeight: '500',
+    },
+    dataSourceText: {
+      fontSize: 11,
+      color: isDarkMode ? '#87CEEB' : '#1F509A',
+      marginTop: 2,
+      fontStyle: 'italic',
     },
     squadsSection: {
       marginBottom: 20,

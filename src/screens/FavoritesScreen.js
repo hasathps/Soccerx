@@ -1,37 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
   TouchableOpacity,
-  RefreshControl,
 } from 'react-native';
 import { useSelector } from 'react-redux';
 import { Feather } from 'react-native-feather';
 import MatchCard from '../components/MatchCard';
 
 export default function FavoritesScreen({ navigation }) {
+  console.log('[FAVORITES SCREEN] Component rendering...');
   const favorites = useSelector((state) => state.favorites.favorites);
   const isDarkMode = useSelector((state) => state.theme.isDarkMode);
-  const [refreshing, setRefreshing] = useState(false);
-  const [updatedFavorites, setUpdatedFavorites] = useState(favorites);
-
-  useEffect(() => {
-    // Simply use favorites as-is (same as matches list)
-    // No API calls to avoid rate limiting issues
-    setUpdatedFavorites(favorites);
-  }, [favorites]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    setUpdatedFavorites(favorites);
-    setTimeout(() => setRefreshing(false), 500);
-  };
+  
+  console.log('[FAVORITES SCREEN] Favorites count:', favorites?.length || 0);
+  console.log('[FAVORITES SCREEN] Dark mode:', isDarkMode);
+  
+  if (favorites && favorites.length > 0) {
+    console.log('[FAVORITES SCREEN] Favorite items:', favorites.map(f => ({
+      id: f.idEvent || f.id,
+      name: f.strEvent || `${f.strHomeTeam} vs ${f.strAwayTeam}`
+    })));
+  }
 
   const styles = getStyles(isDarkMode);
 
-  if (updatedFavorites.length === 0) {
+  if (favorites.length === 0) {
     return (
       <View style={styles.emptyContainer}>
         <Feather name="heart" size={64} color="#8B0000" fill="#8B0000" />
@@ -41,7 +37,7 @@ export default function FavoritesScreen({ navigation }) {
         </Text>
         <TouchableOpacity
           style={styles.browseButton}
-          onPress={() => navigation.navigate('Football')}
+          onPress={() => navigation.navigate('Home')}
         >
           <Text style={styles.browseButtonText}>Browse Matches</Text>
         </TouchableOpacity>
@@ -53,12 +49,13 @@ export default function FavoritesScreen({ navigation }) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerText}>
-          My Favorites ({updatedFavorites.length})
+          My Favorites ({favorites.length})
         </Text>
       </View>
       <FlatList
-        data={updatedFavorites}
+        data={favorites}
         keyExtractor={(item, index) => {
+          // Create unique key by combining idEvent with other unique fields and index
           const matchId = item.idEvent?.toString() || item.id?.toString() || '';
           const uniqueKey = `${matchId}_${item.dateEvent || ''}_${item.strHomeTeam || ''}_${item.strAwayTeam || ''}_${index}`;
           return uniqueKey;
@@ -73,9 +70,6 @@ export default function FavoritesScreen({ navigation }) {
           />
         )}
         contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
       />
     </View>
   );

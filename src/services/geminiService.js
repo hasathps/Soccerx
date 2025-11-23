@@ -71,10 +71,7 @@ suggest the user check the app's match listings or player database.`;
 // Try using REST API directly (more reliable)
 const tryRestAPI = async (modelName, prompt, apiVersion = 'v1beta') => {
   try {
-    console.log(`[GEMINI SERVICE] Trying REST API with model: ${modelName} (API version: ${apiVersion})`);
     const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
-    
-    console.log(`[GEMINI SERVICE] REST API URL: ${url.replace(GEMINI_API_KEY, 'API_KEY_HIDDEN')}`);
     
     const response = await axios.post(
       url,
@@ -94,7 +91,6 @@ const tryRestAPI = async (modelName, prompt, apiVersion = 'v1beta') => {
     
     if (response.data && response.data.candidates && response.data.candidates[0]) {
       const text = response.data.candidates[0].content.parts[0].text;
-      console.log(`[GEMINI SERVICE] REST API with ${modelName} worked successfully!`);
       return { success: true, text, modelName };
     }
     
@@ -103,13 +99,6 @@ const tryRestAPI = async (modelName, prompt, apiVersion = 'v1beta') => {
     const errorMsg = error.response?.data?.error?.message || error.message;
     const errorStatus = error.response?.status;
     const errorData = error.response?.data;
-    
-    console.error(`[GEMINI SERVICE] REST API with ${modelName} failed:`);
-    console.error(`  Status: ${errorStatus}`);
-    console.error(`  Message: ${errorMsg}`);
-    if (errorData) {
-      console.error(`  Full error data:`, JSON.stringify(errorData, null, 2));
-    }
     
     return { 
       success: false, 
@@ -149,43 +138,13 @@ export const chatWithGemini = async (message, conversationHistory = []) => {
       };
     }
 
-    // First, get list of available models from the API
-    console.log('[GEMINI SERVICE] Fetching available models from API...');
-    const availableModels = await listAvailableModels();
-    
-    // Use available models if we got any, otherwise fall back to known working models
-    let modelNames = [];
-    if (availableModels && availableModels.length > 0) {
-      // Prioritize known working models first
-      const priorityModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-      const prioritized = [];
-      const others = [];
-      
-      availableModels.forEach(model => {
-        if (priorityModels.includes(model)) {
-          prioritized.push(model);
-        } else {
-          others.push(model);
-        }
-      });
-      
-      // Sort priority models by priority order
-      prioritized.sort((a, b) => priorityModels.indexOf(a) - priorityModels.indexOf(b));
-      
-      modelNames = [...prioritized, ...others];
-      console.log(`[GEMINI SERVICE] Found ${availableModels.length} available models, prioritized list:`, modelNames);
-    } else {
-      // Fallback to known working model names
-      modelNames = [
-        'gemini-2.5-flash',   // Known to work
-        'gemini-2.5-pro',
-        'gemini-1.5-flash',
-        'gemini-1.5-pro',
-        'gemini-pro',
-        'gemini-1.0-pro',
-      ];
-      console.log('[GEMINI SERVICE] Could not fetch model list, using fallback names');
-    }
+    // Use a limited set of models to avoid too many API calls
+    const modelNames = [
+      'gemini-2.5-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+      'gemma-3-1b-it',
+    ];
 
     // Add system context
     const systemContext = getSportsContext();
@@ -193,73 +152,46 @@ export const chatWithGemini = async (message, conversationHistory = []) => {
     // Build the prompt with context
     const prompt = `${systemContext}\n\nUser: ${message}\nAssistant:`;
 
-    console.log('[GEMINI SERVICE] Sending request to Gemini...');
+    // Try REST API with limited models
+    let apiKeyInvalid = false;
+    let quotaExceeded = false;
     
-    // Try REST API first (more reliable)
-    // Try v1beta first, then v1 if that fails
-    console.log('[GEMINI SERVICE] Trying REST API first...');
-    const errors = [];
-    
-    const apiVersions = ['v1beta', 'v1'];
-    
-    for (const apiVersion of apiVersions) {
-      console.log(`[GEMINI SERVICE] Trying API version: ${apiVersion}`);
-      for (const modelName of modelNames) {
-        const result = await tryRestAPI(modelName, prompt, apiVersion);
-        if (result.success) {
-          console.log(`[GEMINI SERVICE] REST API (${apiVersion}) response received successfully with model: ${modelName}`);
-          return {
-            success: true,
-            message: result.text,
-          };
-        } else {
-          const errorInfo = `${apiVersion}/${modelName}: ${result.error} (Status: ${result.status})`;
-          errors.push(errorInfo);
-          
-          // Don't log quota/rate limit errors as errors if we can still proceed
-          const isQuotaError = result.status === 429 || 
-            (result.errorData?.error?.code === 429) ||
-            (result.error && result.error.toLowerCase().includes('quota'));
-          
-          if (isQuotaError) {
-            console.log(`[GEMINI SERVICE] ${errorInfo} (Rate limit - will retry with next model)`);
-          } else {
-            console.log(`[GEMINI SERVICE] ${errorInfo}`);
-            // Only log error details for non-quota errors
-            if (result.errorData?.error?.details && !isQuotaError) {
-              console.error(`[GEMINI SERVICE] Error details:`, result.errorData.error.details);
-            }
-          }
-        }
-      }
-    }
-    
-    console.error('[GEMINI SERVICE] All REST API attempts failed. Summary of errors:');
-    errors.forEach(err => console.error(`  - ${err}`));
-    
-    // If REST API failed, try SDK
-    console.log('[GEMINI SERVICE] REST API failed, trying SDK...');
     for (const modelName of modelNames) {
-      const result = await tryModelSDK(ai, modelName, prompt);
+      const result = await tryRestAPI(modelName, prompt, 'v1beta');
+      
       if (result.success) {
-        console.log('[GEMINI SERVICE] SDK response received successfully');
         return {
           success: true,
           message: result.text,
         };
       }
+      
+      // Check for API key issues (403 - leaked/invalid key)
+      if (result.status === 403) {
+        apiKeyInvalid = true;
+        const errorMsg = result.error || 'API key is invalid or has been leaked';
+        if (errorMsg.toLowerCase().includes('leaked')) {
+          throw new Error('Your Gemini API key has been reported as leaked. Please generate a new API key at https://makersuite.google.com/app/apikey and update it in src/config/gemini.config.js');
+        } else {
+          throw new Error('Your Gemini API key is invalid. Please check your API key in src/config/gemini.config.js');
+        }
+      }
+      
+      // Check for quota issues (429)
+      if (result.status === 429) {
+        quotaExceeded = true;
+        continue;
+      }
     }
     
-    // If all models failed
-    throw new Error('All model names and methods failed. Please verify your API key is valid and has access to Gemini models. Check: https://makersuite.google.com/app/apikey');
-  } catch (error) {
-    console.error('===========================================');
-    console.error('[GEMINI SERVICE ERROR] Error in chat request:');
-    console.error('[GEMINI SERVICE ERROR] Error type:', error.constructor.name);
-    console.error('[GEMINI SERVICE ERROR] Error message:', error.message);
-    console.error('[GEMINI SERVICE ERROR] Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-    console.error('===========================================');
+    // If we got here and quota was exceeded, throw quota error
+    if (quotaExceeded) {
+      throw new Error('Gemini API quota exceeded. Please wait a few minutes and try again, or check your quota at https://ai.dev/usage');
+    }
     
+    // If all models failed for other reasons
+    throw new Error('Unable to connect to Gemini AI. Please check your API key and internet connection.');
+  } catch (error) {
     return {
       success: false,
       error: error.message || 'Failed to get response from Gemini AI',
